@@ -4,6 +4,8 @@ Draft review record, November 3, 2026. Evidence and launch checklist, not a lega
 
 ## Owner-confirmed direction
 
+- Debra has operational dispatch control. The owner monitors all company jobs in the background through a read-only account, with no approval step for routine assignments. Live shared monitoring and closed-app alerts are not activated in the preview.
+
 - Royal Flush Plumbing of the Florida Panhandle, Inc.; Florida service department.
 - Primarily Panama City Beach; Panama City, 30A and nearby locations subject to office travel/availability review.
 - Hours: Monday–Friday, 8 am–5 pm Central Time. After-hours requests should alert the service cell immediately; do not defer them to the next business day.

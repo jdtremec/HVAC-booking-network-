@@ -14,7 +14,7 @@ npm run build
 npm run dev
 ~~~
 
-Open the printed local URL. Preview mode requires no credentials. Select dispatcher, technician or customer in the preview role selector.
+Open the printed local URL. Preview mode requires no credentials. The preview opens in the read-only owner overview. Select dispatcher, technician or customer in the preview role selector to try the other workflows.
 
 ~~~sh
 npm test
@@ -27,7 +27,9 @@ Database tests use embedded PostgreSQL through PGlite, with simulated Supabase A
 - Plumbing intake, work orders, office dispatch and technician progress.
 - Requested → Assigned → En route → Working → Completed, plus office cancellation.
 - Central Time appointment windows, daylight-saving validation and overlap rejection.
-- Dedicated company memberships: owner, dispatcher, technician, invited customer.
+- Dedicated company memberships: read-only owner, operational dispatcher, assigned technician, invited customer.
+- Owner overview with watch list, technician workload and recent activity.
+- Authenticated live changes with 15-second backup reads, reconnect checks and stale/connection indicators. No automatic dispatch decisions.
 - Separate Supabase project requirement, company schema, RLS and restricted column grants.
 - Append-only work-order events and a notification outbox constrained to disabled.
 - Search, status filters, service history and responsive views.

@@ -1,10 +1,10 @@
 import {createClient} from '@supabase/supabase-js';
-import {isOffice,validateRequest,validateTransition,overlaps,centralInput,centralToUTC} from './domain.js';
+import {isOffice,canDispatch,validateRequest,validateTransition,overlaps,centralInput,centralToUTC} from './domain.js';
 
-const ids={office:'00000000-0000-4000-8000-000000000001',tech:'00000000-0000-4000-8000-000000000002',tech2:'00000000-0000-4000-8000-000000000003',customer:'00000000-0000-4000-8000-000000000004'};
+const ids={office:'00000000-0000-4000-8000-000000000001',tech:'00000000-0000-4000-8000-000000000002',tech2:'00000000-0000-4000-8000-000000000003',customer:'00000000-0000-4000-8000-000000000004',owner:'00000000-0000-4000-8000-000000000005'};
 export class DemoRepository {
   constructor() {
-    this.demo=true; this.setRole('dispatcher'); this.settings={intake_enabled:false};
+    this.demo=true; this.setRole('owner'); this.settings={intake_enabled:false};
     this.members=[{user_id:ids.office,display_name:'Demo dispatcher',role:'dispatcher',active:true},{user_id:ids.tech,display_name:'Demo technician A',role:'technician',active:true},{user_id:ids.tech2,display_name:'Demo technician B',role:'technician',active:true}];
     const day=centralInput().slice(0,10);
     this.jobs=[
@@ -14,34 +14,35 @@ export class DemoRepository {
     ].map((j,i)=>({...j,customer_id:ids.customer,customer_name:'Sample customer '+(i+1),customer_phone:'202-555-01'+(10+i),street_address:'Fictional service address '+(i+1),notes:'Fictional training job. No service requested.',version:1,created_at:new Date().toISOString(),terms_version:'rf-draft-2026-11-03'}));
     this.events=[]; this.outbox=[];
   }
-  setRole(role) {this.user={id:role==='technician'?ids.tech:role==='customer'?ids.customer:ids.office};this.profile={role,display_name:role==='technician'?'Demo technician A':role==='customer'?'Sample customer':'Demo dispatcher'};}
+  setRole(role) {this.user={id:role==='technician'?ids.tech:role==='customer'?ids.customer:role==='owner'?ids.owner:ids.office};this.profile={role,display_name:role==='technician'?'Demo technician A':role==='customer'?'Sample customer':role==='owner'?'Demo owner':'Demo dispatcher'};}
   async load() {
     const jobs=this.jobs.filter(j=>isOffice(this.profile.role)||j.assigned_to===this.user.id||this.profile.role==='customer'&&j.customer_id===this.user.id);
     return {jobs:structuredClone(jobs),members:this.members.filter(m=>isOffice(this.profile.role)||m.user_id===this.user.id),events:this.events.filter(e=>jobs.some(j=>j.id===e.work_order_id)),outbox:isOffice(this.profile.role)?this.outbox:[],settings:this.settings};
   }
   record(job,type) {
-    const event={id:crypto.randomUUID(),work_order_id:job.id,event_type:type,status:job.status,created_at:new Date().toISOString()};
+    const event={id:crypto.randomUUID(),work_order_id:job.id,event_type:type,actor_id:this.user.id,status:job.status,created_at:new Date().toISOString()};
     this.events.unshift(event);this.outbox.unshift({id:crypto.randomUUID(),event_id:event.id,work_order_id:job.id,event_type:type,delivery_state:'disabled',created_at:event.created_at});
   }
   async create(data) {
-    if(!['customer','owner','dispatcher'].includes(this.profile.role)) throw new Error('Office access is required.');
+    if(!['customer','dispatcher'].includes(this.profile.role)) throw new Error('Office access is required.');
     validateRequest(data);
     const existing=this.jobs.find(j=>j.id===data.id);if(existing)return existing;
     const job={...data,customer_id:ids.customer,status:'requested',assigned_to:null,scheduled_start:null,scheduled_end:null,version:1,created_at:new Date().toISOString()};
     this.jobs.unshift(job);this.record(job,'requested');return job;
   }
   async update(id,version,patch) {
+    if(this.profile.role==='owner')throw new Error('Owner monitoring is read-only.');
     const job=this.jobs.find(j=>j.id===id);if(!job||job.version!==version)throw new Error('This job changed. Refresh before saving.');
     const next={...job,...patch};
     if('assigned_to' in patch) {
-      if(!isOffice(this.profile.role))throw new Error('Only the office can assign technicians.');
+      if(!canDispatch(this.profile.role))throw new Error('Only the office can assign technicians.');
       if(!['requested','assigned'].includes(job.status))throw new Error('This job has already started.');
       if(!this.members.some(m=>m.user_id===next.assigned_to&&m.role==='technician'&&m.active))throw new Error('Choose an active Royal Flush technician.');
       if(!next.scheduled_start||next.scheduled_end<=next.scheduled_start)throw new Error('Choose a valid appointment window.');
       if(overlaps(this.jobs,next))throw new Error('That technician already has a job in this time window.');
     }
     if(next.status!==job.status)validateTransition(next.status==='assigned'?{...job,assigned_to:next.assigned_to}:job,next.status,this.profile.role,this.user.id);
-    Object.assign(job,next,{version:version+1});this.record(job,'assigned_to' in patch?'scheduled':job.status);return job;
+    Object.assign(job,next,{version:version+1,updated_at:new Date().toISOString()});this.record(job,'assigned_to' in patch?'scheduled':job.status);return job;
   }
 }
 export class SupabaseRepository {
@@ -57,24 +58,51 @@ export class SupabaseRepository {
     this.profile=r.data;
   }
   async logout(){await this.client.auth.signOut();this.user=null;this.profile=null;}
+  watch(onChange,onStatus) {
+    let channel=this.client.channel('royal-flush-owner-'+this.user.id);
+    for(const table of ['work_orders','work_order_events','members','settings']) {
+      // No DELETE subscription: deletes are not row-filterable in Postgres Changes.
+      for(const event of ['INSERT','UPDATE']) channel=channel.on('postgres_changes',{event,schema:'royal_flush',table},onChange);
+    }
+    channel.subscribe(onStatus);
+    return ()=>{void this.client.removeChannel(channel);};
+  }
+  async allJobs() {
+    const jobs=[];
+    for(let start=0;;start+=500){
+      const r=await this.client.from('work_orders').select('*').order('created_at',{ascending:false}).order('id').range(start,start+499);
+      if(r.error)return r;
+      jobs.push(...r.data);
+      if(r.data.length<500)return {data:jobs};
+    }
+  }
   async load(){
+    const userId=this.user?.id;
+    if(!userId)throw Object.assign(new Error('Sign in to view Royal Flush records.'),{accessRemoved:true});
+    const membership=await this.client.from('members').select('user_id,role,display_name,active').eq('user_id',userId).eq('active',true).maybeSingle();
+    if(membership.error)throw Object.assign(new Error('Unable to verify access. Check your connection.'),{accessRemoved:[401,403].includes(membership.status)});
+    if(!membership.data||this.user?.id!==userId)throw Object.assign(new Error('Royal Flush access has been removed.'),{accessRemoved:true});
+    this.profile=membership.data;
     const results=await Promise.all([
-      this.client.from('work_orders').select('*').order('created_at',{ascending:false}).limit(200),
+      this.allJobs(),
       this.client.from('members').select('user_id,display_name,role,active').eq('active',true),
       this.client.from('work_order_events').select('*').order('created_at',{ascending:false}).limit(200),
       isOffice(this.profile.role)?this.client.from('notification_outbox').select('*').order('created_at',{ascending:false}).limit(50):Promise.resolve({data:[]}),
       this.client.from('settings').select('intake_enabled').eq('id',true).single()
     ]);
     if(results.some(r=>r.error))throw new Error('Unable to load Royal Flush records. Check your connection and access, then retry.');
+    if(this.user?.id!==userId)throw Object.assign(new Error('Session ended.'),{accessRemoved:true});
     const [jobs,members,events,outbox,settings]=results.map(r=>r.data);return {jobs,members,events,outbox,settings};
   }
   async create(data){
+    if(!['dispatcher','customer'].includes(this.profile?.role))throw new Error('Owner monitoring is read-only.');
     validateRequest(data);
     const {data:job,error}=await this.client.from('work_orders').insert({...data,customer_id:this.profile.role==='customer'?this.user.id:null}).select().single();
     if(error?.code==='23505'){const prior=await this.client.from('work_orders').select('*').eq('id',data.id).single();if(!prior.error)return prior.data;}
     if(error)throw new Error(error.message);return job;
   }
   async update(id,version,patch){
+    if(this.profile?.role==='owner')throw new Error('Owner monitoring is read-only.');
     const r=await this.client.from('work_orders').update(patch).eq('id',id).eq('version',version).select().maybeSingle();
     if(r.error)throw new Error(r.error.message);if(!r.data)throw new Error('This job changed or access was removed. Refresh before saving.');return r.data;
   }

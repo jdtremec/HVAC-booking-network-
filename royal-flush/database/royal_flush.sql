@@ -102,12 +102,12 @@ create policy orders_read on royal_flush.work_orders for select to authenticated
     or ((select rf_private.current_role())='customer' and customer_id=(select auth.uid())));
 create policy orders_insert on royal_flush.work_orders for insert to authenticated
   with check(created_by=(select auth.uid()) and
-    ((select rf_private.current_role()) in ('owner','dispatcher')
+    ((select rf_private.current_role()) = 'dispatcher'
     or ((select rf_private.current_role())='customer' and customer_id=(select auth.uid()))));
 create policy orders_update on royal_flush.work_orders for update to authenticated
-  using((select rf_private.current_role()) in ('owner','dispatcher')
+  using((select rf_private.current_role()) = 'dispatcher'
     or ((select rf_private.current_role())='technician' and assigned_to=(select auth.uid())))
-  with check((select rf_private.current_role()) in ('owner','dispatcher')
+  with check((select rf_private.current_role()) = 'dispatcher'
     or ((select rf_private.current_role())='technician' and assigned_to=(select auth.uid())));
 create policy events_read on royal_flush.work_order_events for select to authenticated
   using(exists(select 1 from royal_flush.work_orders w where w.id=work_order_id));
@@ -126,13 +126,14 @@ language plpgsql security invoker set search_path='' as $$
 declare r text := rf_private.current_role(); enabled boolean; approved_version text;
 begin
   if auth.uid() is null or r is null then raise exception 'Royal Flush membership required'; end if;
+  if r='owner' then raise exception 'Owner monitoring is read-only'; end if;
   if tg_op='INSERT' then
     select intake_enabled,terms_version into enabled,approved_version from royal_flush.settings where id;
     if not coalesce(enabled,false) then raise exception 'Real customer intake is disabled pending launch review'; end if;
     if new.terms_version is distinct from approved_version then raise exception 'Service notice version is not current'; end if;
     if new.created_by<>auth.uid() or new.status<>'requested' or new.assigned_to is not null or new.version<>1 then
       raise exception 'Requests must start unassigned'; end if;
-    if r not in ('owner','dispatcher','customer') then raise exception 'This role cannot create requests'; end if;
+    if r not in ('dispatcher','customer') then raise exception 'This role cannot create requests'; end if;
     if r='customer' and new.customer_id is distinct from auth.uid() then raise exception 'Customer identity mismatch'; end if;
     if new.customer_id is not null and not exists(select 1 from royal_flush.members where user_id=new.customer_id and role='customer' and active) then
       raise exception 'Customer must have active company access'; end if;
@@ -150,7 +151,7 @@ begin
       (old.status='working' and new.status in ('completed','cancelled'))
     ) then raise exception 'Invalid service status transition'; end if;
     if (new.assigned_to,new.scheduled_start,new.scheduled_end) is distinct from (old.assigned_to,old.scheduled_start,old.scheduled_end)
-      and (r not in ('owner','dispatcher') or old.status not in ('requested','assigned') or new.status<>'assigned') then
+      and (r<>'dispatcher' or old.status not in ('requested','assigned') or new.status<>'assigned') then
       raise exception 'Only office staff may schedule a job before work starts'; end if;
     if new is not distinct from old then return null; end if;
     new.version:=old.version+1; new.updated_at:=now();

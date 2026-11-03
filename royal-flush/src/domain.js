@@ -9,6 +9,7 @@ export const LABELS = { requested: 'Requested', assigned: 'Assigned', en_route: 
 export const ISSUES = ['Leak or burst pipe', 'Clogged drain', 'Water heater', 'Fixture repair', 'Other plumbing'];
 export const NEXT = { requested: ['assigned','cancelled'], assigned: ['en_route','cancelled'], en_route: ['working','cancelled'], working: ['completed','cancelled'], completed: [], cancelled: [] };
 export const isOffice = role => ['owner','dispatcher'].includes(role);
+export const canDispatch = role => role === 'dispatcher';
 export const active = job => !['completed','cancelled'].includes(job.status);
 export function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -41,7 +42,7 @@ export function validateRequest(data) {
 }
 export function validateTransition(job, status, role, userId) {
   if(!NEXT[job.status]?.includes(status)) throw new Error('That status change is not available. Refresh the job.');
-  if(!isOffice(role) && !(role==='technician' && job.assigned_to===userId && ['en_route','working','completed'].includes(status))) throw new Error('This action needs office access or the assigned technician.');
+  if(!canDispatch(role) && !(role==='technician' && job.assigned_to===userId && ['en_route','working','completed'].includes(status))) throw new Error('This action needs office access or the assigned technician.');
   if(status==='assigned' && !job.assigned_to) throw new Error('Assign a technician first.');
 }
 export function overlaps(jobs, candidate) {

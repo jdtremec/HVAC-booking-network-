@@ -53,6 +53,17 @@ test('database permissions and service workflow',async t=>{
    await actor(2);assert.equal((await rows('select * from royal_flush.work_orders')).length,1);
    await assert.rejects(db.exec("update royal_flush.work_orders set assigned_to='"+uid(3)+"' where id='"+uid(101)+"'"),/Technicians can only/);
   });
+  await t.test('owner can monitor all jobs and staff but cannot dispatch through direct SQL',async()=>{
+   await actor(1);
+   assert.equal((await rows('select * from royal_flush.work_orders')).length,2);
+   assert.equal((await rows('select * from royal_flush.members')).length,6);
+   await assert.rejects(insert(103),/read-only|row-level security/);
+   assert.equal((await schedule(101,3)).rows.length,0);
+   assert.equal((await rows("update royal_flush.work_orders set status='cancelled' returning id")).length,0);
+   await assert.rejects(db.exec("update royal_flush.members set role='dispatcher'"),/permission denied/);
+   await actor(6);
+   assert.equal((await rows('select * from royal_flush.work_orders')).length,2);
+  });
   await t.test('protected fields, invalid transitions, stale updates and forged events fail',async()=>{
    await actor(2);
    await assert.rejects(db.exec("update royal_flush.work_orders set customer_name='tampered'"),/permission denied/);
@@ -74,7 +85,23 @@ test('database permissions and service workflow',async t=>{
   await t.test('revoked staff lose data access immediately',async()=>{
    await admin("update royal_flush.members set active=false where user_id='"+uid(3)+"'");
    await actor(3);assert.equal((await rows('select * from royal_flush.work_orders')).length,0);assert.equal((await rows('select * from royal_flush.work_order_events')).length,0);
+   await admin("update royal_flush.members set active=false where user_id='"+uid(1)+"'");
+   await actor(1);assert.equal((await rows('select * from royal_flush.work_orders')).length,0);assert.equal((await rows('select * from royal_flush.notification_outbox')).length,0);
   });
  }finally{await db.close();}
 });
 
+
+test('Realtime setup adds only the company tables and is safe to repeat',async()=>{
+ const db=new PGlite();
+ try{
+  await db.exec(boot);await db.exec(schema);
+  const realtime=await readFile(new URL('../database/enable_realtime.sql',import.meta.url),'utf8');
+  await assert.rejects(db.exec(realtime),/publication is missing/);
+  await db.exec('rollback; create publication supabase_realtime;');
+  await db.exec(realtime);await db.exec(realtime);
+  const result=await db.query("select schemaname,tablename from pg_publication_tables where pubname='supabase_realtime' order by tablename");
+  assert.deepEqual(result.rows.map(r=>r.tablename),['members','settings','work_order_events','work_orders']);
+  assert.ok(result.rows.every(r=>r.schemaname==='royal_flush'));
+ }finally{await db.close();}
+});
