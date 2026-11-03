@@ -96,12 +96,13 @@ test('Realtime setup adds only the company tables and is safe to repeat',async()
  const db=new PGlite();
  try{
   await db.exec(boot);await db.exec(schema);
+  await db.exec(await readFile(new URL('../database/field_and_billing.sql',import.meta.url),'utf8'));
   const realtime=await readFile(new URL('../database/enable_realtime.sql',import.meta.url),'utf8');
   await assert.rejects(db.exec(realtime),/publication is missing/);
   await db.exec('rollback; create publication supabase_realtime;');
   await db.exec(realtime);await db.exec(realtime);
   const result=await db.query("select schemaname,tablename from pg_publication_tables where pubname='supabase_realtime' order by tablename");
-  assert.deepEqual(result.rows.map(r=>r.tablename),['members','settings','work_order_events','work_orders']);
+  assert.deepEqual(result.rows.map(r=>r.tablename),['invoices','job_updates','members','settings','work_order_events','work_orders']);
   assert.ok(result.rows.every(r=>r.schemaname==='royal_flush'));
  }finally{await db.close();}
 });

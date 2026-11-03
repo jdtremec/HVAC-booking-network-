@@ -32,6 +32,9 @@ Database tests use embedded PostgreSQL through PGlite, with simulated Supabase A
 - Authenticated live changes with 15-second backup reads, reconnect checks and stale/connection indicators. No automatic dispatch decisions.
 - Separate Supabase project requirement, company schema, RLS and restricted column grants.
 - Append-only work-order events and a notification outbox constrained to disabled.
+- Private technician notes, before/after photos, office replies and live staff updates.
+- Dispatcher invoice drafts, QuickBooks invoice approval/linking, customer payment QR/link handoff and clearly marked printable preview worksheets.
+- No automatic QuickBooks invoice creation, payment-status synchronization or real payment in preview.
 - Search, status filters, service history and responsive views.
 - Locked-by-default real intake, safe configuration checks and deployment instructions.
 

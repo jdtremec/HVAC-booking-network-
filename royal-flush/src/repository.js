@@ -1,3 +1,4 @@
+import {demoFieldMethods,liveFieldMethods} from './field-repository.js';
 import {createClient} from '@supabase/supabase-js';
 import {isOffice,canDispatch,validateRequest,validateTransition,overlaps,centralInput,centralToUTC} from './domain.js';
 
@@ -12,12 +13,12 @@ export class DemoRepository {
       {id:crypto.randomUUID(),issue:'Water heater',city:'Panama City',zip_code:'32401',priority:'normal',status:'assigned',assigned_to:ids.tech,scheduled_start:centralToUTC(day+'T10:00'),scheduled_end:centralToUTC(day+'T11:00')},
       {id:crypto.randomUUID(),issue:'Clogged drain',city:'30A corridor',zip_code:'32459',priority:'normal',status:'working',assigned_to:ids.tech2,scheduled_start:centralToUTC(day+'T08:00'),scheduled_end:centralToUTC(day+'T09:00')},
     ].map((j,i)=>({...j,customer_id:ids.customer,customer_name:'Sample customer '+(i+1),customer_phone:'202-555-01'+(10+i),street_address:'Fictional service address '+(i+1),notes:'Fictional training job. No service requested.',version:1,created_at:new Date().toISOString(),terms_version:'rf-draft-2026-11-03'}));
-    this.events=[]; this.outbox=[];
+    this.events=[]; this.outbox=[]; this.updates=[]; this.invoices=[]; this.photos=new Map();
   }
   setRole(role) {this.user={id:role==='technician'?ids.tech:role==='customer'?ids.customer:role==='owner'?ids.owner:ids.office};this.profile={role,display_name:role==='technician'?'Demo technician A':role==='customer'?'Sample customer':role==='owner'?'Demo owner':'Demo dispatcher'};}
   async load() {
     const jobs=this.jobs.filter(j=>isOffice(this.profile.role)||j.assigned_to===this.user.id||this.profile.role==='customer'&&j.customer_id===this.user.id);
-    return {jobs:structuredClone(jobs),members:this.members.filter(m=>isOffice(this.profile.role)||m.user_id===this.user.id),events:this.events.filter(e=>jobs.some(j=>j.id===e.work_order_id)),outbox:isOffice(this.profile.role)?this.outbox:[],settings:this.settings};
+    return {jobs:structuredClone(jobs),updates:this.profile.role==='customer'?[]:structuredClone(this.updates.filter(u=>jobs.some(j=>j.id===u.work_order_id))),invoices:structuredClone(this.invoices.filter(i=>jobs.some(j=>j.id===i.work_order_id)&&(isOffice(this.profile.role)||i.stage==='linked'))),members:this.members.filter(m=>isOffice(this.profile.role)||m.user_id===this.user.id),events:this.events.filter(e=>jobs.some(j=>j.id===e.work_order_id)),outbox:isOffice(this.profile.role)?this.outbox:[],settings:this.settings};
   }
   record(job,type) {
     const event={id:crypto.randomUUID(),work_order_id:job.id,event_type:type,actor_id:this.user.id,status:job.status,created_at:new Date().toISOString()};
@@ -60,7 +61,7 @@ export class SupabaseRepository {
   async logout(){await this.client.auth.signOut();this.user=null;this.profile=null;}
   watch(onChange,onStatus) {
     let channel=this.client.channel('royal-flush-owner-'+this.user.id);
-    for(const table of ['work_orders','work_order_events','members','settings']) {
+    for(const table of ['work_orders','work_order_events','members','settings','job_updates','invoices']) {
       // No DELETE subscription: deletes are not row-filterable in Postgres Changes.
       for(const event of ['INSERT','UPDATE']) channel=channel.on('postgres_changes',{event,schema:'royal_flush',table},onChange);
     }
@@ -88,11 +89,12 @@ export class SupabaseRepository {
       this.client.from('members').select('user_id,display_name,role,active').eq('active',true),
       this.client.from('work_order_events').select('*').order('created_at',{ascending:false}).limit(200),
       isOffice(this.profile.role)?this.client.from('notification_outbox').select('*').order('created_at',{ascending:false}).limit(50):Promise.resolve({data:[]}),
-      this.client.from('settings').select('intake_enabled').eq('id',true).single()
+      this.client.from('settings').select('intake_enabled,photos_enabled,billing_enabled,payments_enabled').eq('id',true).single(),
+      this.allRecords('job_updates'),this.allRecords('invoices')
     ]);
     if(results.some(r=>r.error))throw new Error('Unable to load Royal Flush records. Check your connection and access, then retry.');
     if(this.user?.id!==userId)throw Object.assign(new Error('Session ended.'),{accessRemoved:true});
-    const [jobs,members,events,outbox,settings]=results.map(r=>r.data);return {jobs,members,events,outbox,settings};
+    const [jobs,members,events,outbox,settings,updates,invoices]=results.map(r=>r.data);return {jobs,members,events,outbox,settings,updates,invoices};
   }
   async create(data){
     if(!['dispatcher','customer'].includes(this.profile?.role))throw new Error('Owner monitoring is read-only.');
@@ -108,3 +110,6 @@ export class SupabaseRepository {
   }
 }
 
+
+Object.assign(DemoRepository.prototype,demoFieldMethods);
+Object.assign(SupabaseRepository.prototype,liveFieldMethods);

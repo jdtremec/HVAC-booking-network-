@@ -4,6 +4,9 @@ Draft review record, November 3, 2026. Evidence and launch checklist, not a lega
 
 ## Owner-confirmed direction
 
+- Use QuickBooks for both invoices and payments. Debra approves charges; technicians may present only the approved customer invoice/payment link. Company lookup succeeded; QuickBooks Payments merchant activation and payment-status synchronization are not verified.
+- Real job-photo intake needs privacy/permission, retention, content validation and live Storage testing before the photo gate is enabled.
+
 - Debra has operational dispatch control. The owner monitors all company jobs in the background through a read-only account, with no approval step for routine assignments. Live shared monitoring and closed-app alerts are not activated in the preview.
 
 - Royal Flush Plumbing of the Florida Panhandle, Inc.; Florida service department.
