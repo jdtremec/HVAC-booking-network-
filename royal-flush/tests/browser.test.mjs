@@ -1,0 +1,56 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {chromium} from 'playwright';
+import {spawn} from 'node:child_process';
+import {mkdir} from 'node:fs/promises';
+const url='http://127.0.0.1:4173';
+test('responsive preview intake, assignment, technician flow and reset',async()=>{
+ const server=spawn(process.execPath,['scripts/serve.mjs'],{windowsHide:true,stdio:'pipe'});
+ const startup=new Promise((resolve,reject)=>{server.stdout.once('data',resolve);server.once('error',reject);server.once('exit',c=>reject(new Error('Preview server exited '+c)));});
+ let browser;
+ try{
+  await startup;
+  browser=await chromium.launch({headless:true,channel:process.env.RF_BROWSER_CHANNEL||'chrome'});
+  await mkdir('test-results',{recursive:true});
+  for(const width of [320,390,768,1440]){
+   const page=await browser.newPage({viewport:{width,height:1000}});
+   const errors=[],external=[];
+   page.on('pageerror',e=>errors.push(e.message));
+   page.on('request',r=>{if(!r.url().startsWith(url))external.push(r.url());});
+   await page.goto(url);
+   await page.getByRole('heading',{name:'Keep the day flowing.'}).waitFor();
+   assert.equal(await page.locator('.job').count(),3);
+   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'no horizontal overflow at '+width);
+   await page.screenshot({path:'test-results/board-'+width+'.png',fullPage:true});
+   await page.getByRole('button',{name:'+ New request',exact:true}).click();
+   assert.equal(await page.getByLabel('Customer name',{exact:true}).getAttribute('readonly'),'');
+   await page.getByLabel('What needs attention?').selectOption('Fixture repair');
+   await page.getByRole('checkbox').check();
+   await page.getByRole('button',{name:'Create sample request',exact:true}).click();
+   await page.getByText('Sample request created in this tab. Nothing was sent.',{exact:true}).waitFor();
+   await page.getByLabel('Technician',{exact:true}).selectOption({label:'Demo technician A'});
+   await page.getByLabel('Arrival window starts · Central Time').fill('2030-11-04T13:00');
+   await page.getByLabel('Window ends · Central Time').fill('2030-11-04T14:00');
+   await page.getByRole('button',{name:'Save assignment',exact:true}).click();
+   await page.getByText('Assignment saved. No customer message was sent.',{exact:true}).waitFor();
+   await page.getByLabel('Preview role').selectOption('technician');
+   await page.getByRole('heading',{name:'Your service jobs.'}).waitFor();
+   const job=page.locator('.job').filter({has:page.getByRole('heading',{name:'Fixture repair',exact:true})});
+   await job.getByRole('button',{name:'View job →'}).click();
+   for(const name of ['Start travel','Start work','Complete job'])await page.getByRole('button',{name,exact:true}).click();
+   await page.locator('.stepper .current').filter({hasText:'Completed'}).waitFor();
+   assert.equal(await page.getByRole('button',{name:'Save assignment',exact:true}).count(),0);
+   await page.getByLabel('Preview role').selectOption('dispatcher');
+   await page.getByRole('button',{name:'Activity',exact:true}).click();
+   assert.equal(await page.getByText('Delivery disabled',{exact:true}).count(),5);
+   assert.equal(await page.evaluate(()=>localStorage.length+sessionStorage.length),0);
+   assert.deepEqual(external,[]);
+   assert.deepEqual(errors,[]);
+   await page.reload();
+   await page.getByRole('heading',{name:'Keep the day flowing.'}).waitFor();
+   assert.equal(await page.locator('.job').count(),3);
+   await page.close();
+  }
+ }finally{await browser?.close();server.kill();}
+});
+

@@ -1,0 +1,13 @@
+{
+  "name": "royal-flush-service-department",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/serve.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": { "@supabase/supabase-js": "2.118.0" },
+  "devDependencies": { "@electric-sql/pglite": "0.5.15", "esbuild": "0.25.12", "playwright": "1.64.1" }
+}
