@@ -64,7 +64,8 @@ test('live subscriptions use only company tables, INSERT/UPDATE and removable ch
   const channel={on(type,filter,fn){assert.equal(type,'postgres_changes');filters.push(filter);return this;},subscribe(fn){subscribed=fn;return this;}};
   repo.user={id:'owner'};repo.client={channel(name){assert.equal(name,'royal-flush-owner-owner');return channel;},removeChannel(c){removed=c;return Promise.resolve('ok');}};
   const change=()=>{},status=()=>{},stop=repo.watch(change,status);
-  assert.equal(subscribed,status);assert.equal(filters.length,12);
+  assert.equal(subscribed,status);assert.equal(filters.length,16);
+  assert.ok(filters.every(f=>!['qbo_secrets','qbo_oauth_states','qbo_requests','qbo_webhooks'].includes(f.table)));
   assert.ok(filters.every(f=>f.schema==='royal_flush'&&['INSERT','UPDATE'].includes(f.event)));
   stop();assert.equal(removed,channel);
 });

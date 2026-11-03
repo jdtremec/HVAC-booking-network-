@@ -18,6 +18,12 @@ test('responsive preview intake, assignment, technician flow and reset',async()=
    page.on('pageerror',e=>errors.push(e.message));
    page.on('request',r=>{if(!r.url().startsWith(url)&&!r.url().startsWith('blob:')&&!r.url().startsWith('data:'))external.push(r.url());});
    await page.goto(url);
+   await page.getByRole('button',{name:'QuickBooks',exact:true}).click();
+   await page.getByRole('heading',{name:'QuickBooks connection',exact:true}).waitFor();
+   assert.match(await page.locator('main').textContent(),/No QuickBooks customer data is loaded/);
+   assert.equal(await page.locator('[data-qbo-action]').count(),0);
+   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+   await page.screenshot({path:'test-results/quickbooks-'+width+'.png',fullPage:true});
    await page.getByLabel('Preview role').selectOption('dispatcher');
    await page.getByRole('heading',{name:'Keep the day flowing.'}).waitFor();
    assert.equal(await page.locator('.job').count(),3);

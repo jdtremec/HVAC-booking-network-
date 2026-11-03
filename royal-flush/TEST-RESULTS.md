@@ -1,3 +1,5 @@
+> Update — 2026-11-03: A separate Royal Flush Supabase project and gated QuickBooks server connection are now installed. The website is still a fictional preview; staff accounts and live Intuit authorization are not complete. See [QUICKBOOKS-SETUP.md](QUICKBOOKS-SETUP.md) for the current state; earlier unapplied/manual-only notes below describe the prior milestone.
+
 # Verification — November 3, 2026
 
 ## Passed
@@ -37,3 +39,9 @@ Combined run: 34 tests passed, zero failures. Targeted mobile browser checks wer
 - Embedded PostgreSQL tests: staff/assignment boundaries, immutable notes/photos, author/path spoofing, upload and billing launch gates, owner read-only access, customer draft exclusion, server-calculated invoice totals, provider URL validation, mandatory approval details, no client paid-status writes, stale updates, and revocation/reassignment. Storage policies run against a fixture schema; the actual Supabase object service was not tested.
 - Draft money calculations reject fractions/negative/excessive values; URLs reject alternate hosts, lookalikes, credentials and unsafe protocols. Preview invoice approval never creates a real payment address or paid status.
 - The connected QuickBooks company was identified by a read-only company lookup. No real invoice, payment link, charge, receipt or message was created. Merchant onboarding, actual checkout, webhooks, reconciliation, refunds and physical phones remain unverified.
+
+## QuickBooks extension verification
+
+10 new tests cover exact money values, company-bound encrypted credentials, signed webhook bytes, role restrictions, duplicate/uncertain invoice creation, fresh final approval and PostgreSQL permissions. The full 44-test run found one outdated subscription-count expectation; after updating it for two new public tables, the affected monitor and mobile suites passed (8/8). Mobile preview tested at 320, 390, 768 and 1440 pixels. No real QuickBooks financial write was tested.
+
+The dedicated hosted database was inspected after installation. Security advisor results contain only four informational deny-by-default server-table notices. Performance findings are unused indexes in the new empty database. The deployed gateway rejects unauthenticated requests (403). Staff Auth, API exposure, live storage/realtime and actual Intuit OAuth remain to be verified.

@@ -18,7 +18,7 @@ export class DemoRepository {
   setRole(role) {this.user={id:role==='technician'?ids.tech:role==='customer'?ids.customer:role==='owner'?ids.owner:ids.office};this.profile={role,display_name:role==='technician'?'Demo technician A':role==='customer'?'Sample customer':role==='owner'?'Demo owner':'Demo dispatcher'};}
   async load() {
     const jobs=this.jobs.filter(j=>isOffice(this.profile.role)||j.assigned_to===this.user.id||this.profile.role==='customer'&&j.customer_id===this.user.id);
-    return {jobs:structuredClone(jobs),updates:this.profile.role==='customer'?[]:structuredClone(this.updates.filter(u=>jobs.some(j=>j.id===u.work_order_id))),invoices:structuredClone(this.invoices.filter(i=>jobs.some(j=>j.id===i.work_order_id)&&(isOffice(this.profile.role)||i.stage==='linked'))),members:this.members.filter(m=>isOffice(this.profile.role)||m.user_id===this.user.id),events:this.events.filter(e=>jobs.some(j=>j.id===e.work_order_id)),outbox:isOffice(this.profile.role)?this.outbox:[],settings:this.settings};
+    return {jobs:structuredClone(jobs),updates:this.profile.role==='customer'?[]:structuredClone(this.updates.filter(u=>jobs.some(j=>j.id===u.work_order_id))),invoices:structuredClone(this.invoices.filter(i=>jobs.some(j=>j.id===i.work_order_id)&&(isOffice(this.profile.role)||i.stage==='linked'))),members:this.members.filter(m=>isOffice(this.profile.role)||m.user_id===this.user.id),events:this.events.filter(e=>jobs.some(j=>j.id===e.work_order_id)),outbox:isOffice(this.profile.role)?this.outbox:[],settings:this.settings,qboConnection:null,qboInvoices:[]};
   }
   record(job,type) {
     const event={id:crypto.randomUUID(),work_order_id:job.id,event_type:type,actor_id:this.user.id,status:job.status,created_at:new Date().toISOString()};
@@ -61,7 +61,7 @@ export class SupabaseRepository {
   async logout(){await this.client.auth.signOut();this.user=null;this.profile=null;}
   watch(onChange,onStatus) {
     let channel=this.client.channel('royal-flush-owner-'+this.user.id);
-    for(const table of ['work_orders','work_order_events','members','settings','job_updates','invoices']) {
+    for(const table of ['work_orders','work_order_events','members','settings','job_updates','invoices','qbo_connection','qbo_job_invoices']) {
       // No DELETE subscription: deletes are not row-filterable in Postgres Changes.
       for(const event of ['INSERT','UPDATE']) channel=channel.on('postgres_changes',{event,schema:'royal_flush',table},onChange);
     }
@@ -89,12 +89,28 @@ export class SupabaseRepository {
       this.client.from('members').select('user_id,display_name,role,active').eq('active',true),
       this.client.from('work_order_events').select('*').order('created_at',{ascending:false}).limit(200),
       isOffice(this.profile.role)?this.client.from('notification_outbox').select('*').order('created_at',{ascending:false}).limit(50):Promise.resolve({data:[]}),
-      this.client.from('settings').select('intake_enabled,photos_enabled,billing_enabled,payments_enabled').eq('id',true).single(),
-      this.allRecords('job_updates'),this.allRecords('invoices')
+      this.client.from('settings').select('intake_enabled,photos_enabled,billing_enabled,payments_enabled,quickbooks_enabled').eq('id',true).single(),
+      this.allRecords('job_updates'),this.allRecords('invoices'),this.allRecords('qbo_job_invoices'),
+      isOffice(this.profile.role)?this.client.from('qbo_connection').select('*').eq('id',true).maybeSingle():Promise.resolve({data:null})
     ]);
     if(results.some(r=>r.error))throw new Error('Unable to load Royal Flush records. Check your connection and access, then retry.');
     if(this.user?.id!==userId)throw Object.assign(new Error('Session ended.'),{accessRemoved:true});
-    const [jobs,members,events,outbox,settings,updates,invoices]=results.map(r=>r.data);return {jobs,members,events,outbox,settings,updates,invoices};
+    const [jobs,members,events,outbox,settings,updates,invoices,qboInvoices,qboConnection]=results.map(r=>r.data);return {jobs,members,events,outbox,settings,updates,invoices,qboInvoices,qboConnection};
+  }
+  async qbo(action,body={}){
+    if(!isOffice(this.profile?.role))throw new Error('Office access is required.');
+    const result=await this.client.functions.invoke('royal-flush-qbo',{body:{...body,action}});
+    if(result.error){let detail;try{detail=await result.error.context?.json();}catch{}throw new Error(detail?.message||'QuickBooks is unavailable. Refresh before trying again.');}
+    if(result.data?.error)throw new Error(result.data.message);return result.data;
+  }
+  async qboCustomers(term){
+    const clean=String(term||'').replace(/[\\%_]/g,'').trim();if(clean.length<2||clean.length>80)throw new Error('Enter at least two letters of the customer name.');
+    const r=await this.client.from('qbo_customers').select('id,display_name,email,phone,address,city,state,postal_code').eq('active',true).ilike('display_name','%'+clean+'%').order('display_name').limit(30);
+    if(r.error)throw new Error('Refresh the QuickBooks customer list first.');return r.data;
+  }
+  async qboItems(){
+    const r=await this.client.from('qbo_items').select('id,name,unit_cents').eq('active',true).in('type',['Service','NonInventory']).order('name').limit(500);
+    if(r.error)throw new Error('Refresh the QuickBooks service list first.');return r.data;
   }
   async create(data){
     if(!['dispatcher','customer'].includes(this.profile?.role))throw new Error('Owner monitoring is read-only.');

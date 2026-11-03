@@ -1,3 +1,5 @@
+> Update — 2026-11-03: A separate Royal Flush Supabase project and gated QuickBooks server connection are now installed. The website is still a fictional preview; staff accounts and live Intuit authorization are not complete. See [QUICKBOOKS-SETUP.md](QUICKBOOKS-SETUP.md) for the current state; earlier unapplied/manual-only notes below describe the prior milestone.
+
 # Existing project audit — November 3, 2026
 
 Repository main: 379aa63b029be39981cff2a7aa375ad4ee262415. Supabase: home-services-dispatch, stsmdfxcekkxpngkfrmz.

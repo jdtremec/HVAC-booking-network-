@@ -1,3 +1,5 @@
+> Update — 2026-11-03: A separate Royal Flush Supabase project and gated QuickBooks server connection are now installed. The website is still a fictional preview; staff accounts and live Intuit authorization are not complete. See [QUICKBOOKS-SETUP.md](QUICKBOOKS-SETUP.md) for the current state; earlier unapplied/manual-only notes below describe the prior milestone.
+
 # Field communication and billing
 
 The owner requested QuickBooks for both invoices and payments, with Debra approving charges and technicians presenting the approved invoice. The connected company lookup returned Royal Flush Plumbing of the Florida Panhandle. That lookup does not verify an active Payments merchant, API OAuth integration, payment methods, fees or settlement.

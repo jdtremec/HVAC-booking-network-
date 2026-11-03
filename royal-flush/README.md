@@ -1,3 +1,5 @@
+> Update — 2026-11-03: A separate Royal Flush Supabase project and gated QuickBooks server connection are now installed. The website is still a fictional preview; staff accounts and live Intuit authorization are not complete. See [QUICKBOOKS-SETUP.md](QUICKBOOKS-SETUP.md) for the current state; earlier unapplied/manual-only notes below describe the prior milestone.
+
 # Royal Flush service department
 
 Company-only adaptation of the Home Services Dispatch workflow for **Royal Flush Plumbing of the Florida Panhandle, Inc.**
